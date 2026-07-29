@@ -263,6 +263,36 @@ impl RapierWorld {
         self.last_contacts.len()
     }
 
+    /// 拿到窄相(供真接触 API 用)
+    pub fn narrow_phase(&self) -> &NarrowPhase {
+        &self.narrow_phase
+    }
+
+    /// 拿到 impulse_joints 集合(可变)
+    pub fn impulse_joints_mut(&mut self) -> &mut ImpulseJointSet {
+        &mut self.impulse_joints
+    }
+
+    /// 拿到 impulse_joints 集合(只读)
+    pub fn impulse_joints(&self) -> &ImpulseJointSet {
+        &self.impulse_joints
+    }
+
+    /// 拿到 rigid_bodies 集合(可变)
+    pub fn rigid_bodies_mut(&mut self) -> &mut RigidBodySet {
+        &mut self.rigid_bodies
+    }
+
+    /// 拿到 rigid_bodies 集合(只读)
+    pub fn rigid_bodies(&self) -> &RigidBodySet {
+        &self.rigid_bodies
+    }
+
+    /// 拿到 collider_set(只读)
+    pub fn colliders(&self) -> &ColliderSet {
+        &self.colliders
+    }
+
     /// 给刚体一个脉冲(瞬间改变速度)
     pub fn apply_impulse(&mut self, h: RigidBodyHandle, impulse: [f32; 3]) {
         if let Some(rb) = self.rigid_bodies.get_mut(h) {
