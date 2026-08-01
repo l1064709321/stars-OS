@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 description = "群星 A.I. OS - Rust 神经认知核心(基础核心层 + 伦理 + 状态机)"
 
+[lib]
+name = "quantum_core"
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true

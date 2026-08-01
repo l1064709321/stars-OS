@@ -31,6 +31,7 @@ pub mod ethics;
 pub mod ewc;          // 模块 24 持续学习 (Elastic Weight Consolidation)
 pub mod eight_gates;
 pub mod emergence;
+pub mod environment_world; // 真环境驱动的物理世界(传感器→物理)
 pub mod existential;
 pub mod genuine_concept; // 真概念发现:从数据反推守恒律(最小二乘拟合)
 pub mod genuine_emergence; // 真涌现引擎(数据驱动,多代际证伪)
@@ -43,7 +44,9 @@ pub mod nlp;          // 真 NLP 模块 12-15(NLU + NLG + CoT + 串联)
 pub mod plasticity;   // 真突触可塑性 (STDP + BCM + 三因子)
 pub mod plasticity_lif; // 真塑性接 LIF + 真 EWC 在脉冲神经上工作
 pub mod predictive_coding; // 真预测编码 (Rao-Ballard, KL 散度驱动)
+pub mod android_bridge; // Android NDK JNI 桥
 pub mod rapier_bridge; // 工业级物理引擎 rapier3d 桥接
+pub mod sensors;      // 真环境传感器接口(Android 后端在 sensors/android.rs)
 pub mod reasoning;    // 模块 20 推理循环 + 32 不确定性 + 49 道德评估
 pub mod reflection;   // 真自我反思模块
 pub mod sandbox_genuine; // 真涌现沙箱桥接(用真证据累积代替假货剧本)
