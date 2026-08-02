@@ -22,35 +22,31 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
-      - uses: gradle/actions/setup-gradle@v3
 
       - name: Configure Cargo linker for Android
         run: |
+          # Determine absolute path to the NDK clang driver we'll use as the linker.
           LINKER_PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+
+          # Export for subsequent steps so cargo/rustc uses it
           echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$LINKER_PATH" >> $GITHUB_ENV
+
+          # Write repository-level cargo config so cargo picks up the linker setting
           mkdir -p .cargo
           cat > .cargo/config.toml <<EOF
           [target.aarch64-linux-android]
           linker = "$LINKER_PATH"
           EOF
+
+          # Debug: show that the linker exists
           ls -l "$LINKER_PATH" || true
 
-      - name: Build Rust .so
+      - name: Build Rust + APK
         run: |
-          cargo build -p quantum-core --release --target aarch64-linux-android 2>&1 | tail -30
-
-      - name: Copy libquantum_core.so to jniLibs
-        run: |
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          cp target/aarch64-linux-android/release/libquantum_core.so android/app/src/main/jniLibs/arm64-v8a/
-          ls -la android/app/src/main/jniLibs/arm64-v8a/
-
-      - name: Build APK
-        working-directory: android
-        run: |
-          gradle wrapper --gradle-version 8.7
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon 2>&1 | tail -40
+          rustup target add aarch64-linux-android
+          cargo build -p quantum-core --release --target aarch64-linux-android
+          cd android
+          ./gradlew assembleDebug
 
       - uses: actions/upload-artifact@v4
         with:
