@@ -22,7 +22,14 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
-      - uses: gradle/actions/setup-gradle@v3
+
+      - name: Install Gradle 8.7
+        run: |
+          GRADLE_VERSION=8.7
+          wget -q https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip -O /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /opt
+          echo "/opt/gradle-${GRADLE_VERSION}/bin" >> $GITHUB_PATH
+          /opt/gradle-${GRADLE_VERSION}/bin/gradle --version
 
       - name: Configure Cargo linker for Android
         run: |
@@ -33,7 +40,6 @@ jobs:
           [target.aarch64-linux-android]
           linker = "$LINKER_PATH"
           EOF
-          ls -l "$LINKER_PATH" || true
 
       - name: Build Rust .so
         run: |
@@ -50,9 +56,9 @@ jobs:
         run: |
           gradle wrapper --gradle-version 8.7
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon 2>&1 | tail -40
+          ./gradlew assembleDebug --no-daemon 2>&1 | tail -50
 
       - uses: actions/upload-artifact@v4
         with:
           name: starsos-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+        path: android/app/build/outputs/apk/debug/app-debug.apk
