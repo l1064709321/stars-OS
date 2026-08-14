@@ -23,14 +23,6 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@v3
 
-      - name: Install Gradle 8.7
-        run: |
-          GRADLE_VERSION=8.7
-          wget -q https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip -O /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /opt
-          echo "/opt/gradle-${GRADLE_VERSION}/bin" >> $GITHUB_PATH
-          /opt/gradle-${GRADLE_VERSION}/bin/gradle --version
-
       - name: Configure Cargo linker for Android
         run: |
           LINKER_PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
@@ -49,14 +41,17 @@ jobs:
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
           cp target/aarch64-linux-android/release/libquantum_core.so android/app/src/main/jniLibs/arm64-v8a/
-          ls -la android/app/src/main/jniLibs/arm64-v8a/
 
-      - name: Build APK
+      - name: Build APK with Gradle 8.7
         working-directory: android
         run: |
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o /tmp/g.zip
+          unzip -q /tmp/g.zip -d /opt
+          export PATH=/opt/gradle-8.7/bin:$PATH
+          gradle --version
           gradle wrapper --gradle-version 8.7
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon 2>&1 | tail -50
+          ./gradlew assembleDebug --no-daemon 2>&1 | tail -60
 
       - uses: actions/upload-artifact@v4
         with:
