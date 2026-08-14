@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.starsos.agi"
-    compileSdk = 33
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.starsos.agi"
         minSdk = 24
-        targetSdk = 33
+        targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
         ndk {
