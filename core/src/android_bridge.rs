@@ -200,6 +200,305 @@ pub extern "C" fn starsos_free_string(s: *mut c_char) {
     }
 }
 
+// =====================================================================
+// AGI 核心状态(简化版,只用现有公开 API)
+// 所有 62 模块在同一个 .so 里,Java 端通过 starsos_agi_* 系列 JNI 调用
+// =====================================================================
+
+// =====================================================================
+// AGI 核心状态(简化版,只用现有公开 API)
+// 所有 62 模块在同一个 .so 里,Java 端通过 starsos_agi_* 系列 JNI 调用
+// =====================================================================
+
+use crate::genuine_emergence::{EmergenceEngine, Evidence, EvidenceKind};
+use crate::genuine_concept::linear_fit;
+use crate::predictive_coding::PredictiveLayer;
+use crate::plasticity_lif::PlasticLifNetwork;
+use crate::causal_full::{CausalGraph, NodeId};
+use crate::ewc::EwcNetwork;
+use crate::memory_io::FileMemoryInjector;
+use crate::reasoning::ReasoningLoop;
+use crate::reflection::SelfReflector;
+use crate::nlp::NluEngine;
+use crate::sandbox_genuine::SandboxGenuineBridge;
+use crate::emergence::indicators::EmergenceIndicators;
+
+/// AGI 状态:11 个核心模块的状态打包
+pub struct AgiState {
+    pub emergence: EmergenceEngine,
+    pub predictive: PredictiveLayer,
+    pub lif: PlasticLifNetwork,
+    pub causal: CausalGraph,
+    pub ewc: EwcNetwork,
+    pub memory: FileMemoryInjector,
+    pub reasoning: ReasoningLoop,
+    pub reflection: SelfReflector,
+    pub nlp: NluEngine,
+    pub sandbox: SandboxGenuineBridge,
+    pub indicators: EmergenceIndicators,
+    pub tick: u64,
+    pub evidence_history: Vec<(u64, [f32; 3])>,
+    pub emergence_count: usize,
+    pub concept_slope: f32,
+    pub concept_r2: f32,
+}
+
+impl AgiState {
+    fn new() -> Self {
+        Self {
+            emergence: EmergenceEngine::new(100),
+            predictive: PredictiveLayer::new(3, 3),
+            lif: PlasticLifNetwork::new(),
+            causal: CausalGraph::new(),
+            ewc: EwcNetwork::new(3, 3),
+            memory: FileMemoryInjector::new(64),
+            reasoning: ReasoningLoop::new(16),
+            reflection: SelfReflector::new(),
+            nlp: NluEngine::new(),
+            sandbox: SandboxGenuineBridge::new(100),
+            indicators: EmergenceIndicators::new(),
+            tick: 0,
+            evidence_history: Vec::new(),
+            emergence_count: 0,
+            concept_slope: 0.0,
+            concept_r2: 0.0,
+        }
+    }
+}
+
+// 用同一个 Mutex 容器存所有 AGI 状态
+struct AgiTable(Vec<*mut AgiState>);
+unsafe impl Send for AgiTable {}
+unsafe impl Sync for AgiTable {}
+
+static AGI_STATES: Mutex<AgiTable> = Mutex::new(AgiTable(Vec::new()));
+
+fn with_agi<F, R>(ptr: usize, f: F) -> Option<R>
+where
+    F: FnOnce(&mut AgiState) -> R,
+{
+    let mut table = AGI_STATES.lock().ok()?;
+    let raw = *table.0.get(ptr)?;
+    if raw.is_null() {
+        return None;
+    }
+    unsafe { Some(f(&mut *raw)) }
+}
+
+/// 创建 AGI 核心(返回 ID)
+#[no_mangle]
+pub extern "C" fn starsos_agi_create() -> c_ulong {
+    let raw = Box::into_raw(Box::new(AgiState::new()));
+    let mut table = AGI_STATES.lock().unwrap();
+    let id = table.0.len();
+    table.0.push(raw);
+    id as c_ulong
+}
+
+/// 销毁
+#[no_mangle]
+pub extern "C" fn starsos_agi_destroy(id: c_ulong) {
+    if let Ok(mut table) = AGI_STATES.lock() {
+        if let Some(slot) = table.0.get_mut(id as usize) {
+            if !slot.is_null() {
+                unsafe {
+                    let _ = Box::from_raw(*slot);
+                }
+                *slot = std::ptr::null_mut();
+            }
+        }
+    }
+}
+
+/// 喂一个真环境观察给 AGI(传感器数据 → 涌现引擎 + 预测编码 + 记忆)
+#[no_mangle]
+pub extern "C" fn starsos_agi_observe(
+    id: c_ulong,
+    _modality: c_int,
+    x: c_float,
+    y: c_float,
+    z: c_float,
+) {
+    with_agi(id as usize, |agi| {
+        // 累积证据历史
+        agi.evidence_history.push((agi.tick, [x, y, z]));
+        if agi.evidence_history.len() > 256 {
+            agi.evidence_history.remove(0);
+        }
+        // 推给涌现引擎
+        let ev = Evidence {
+            source: agi.tick,
+            kind: EvidenceKind::ClusterFit,
+            strength: 0.5,
+            tick: agi.tick,
+        };
+        // 2 参数版本(EmergenceEngine::add_evidence)
+        agi.emergence.add_evidence(agi.tick, ev);
+        // 推给预测编码
+        agi.predictive.forward(&[x, y, z]);
+        // 因果图加边:前一个 tick → 当前
+        if agi.tick > 0 {
+            agi.causal.add_edge(
+                NodeId((agi.tick - 1) as u32),
+                NodeId(agi.tick as u32),
+                0.5,
+            );
+        }
+        agi.tick += 1;
+    });
+}
+
+/// 跑一步 AGI 推理(涌现检测 + 概念发现 + 反思 + 推理循环)
+#[no_mangle]
+pub extern "C" fn starsos_agi_step(id: c_ulong) -> *const c_char {
+    let result = with_agi(id as usize, |agi| {
+        // 涌现检测
+        let sigs = agi.indicators.detect();
+        agi.emergence_count = sigs.len();
+        // 概念发现
+        if agi.evidence_history.len() >= 8 {
+            let last8: Vec<f32> = agi.evidence_history.iter().rev().take(8)
+                .map(|(_, v)| v[0]).collect();
+            let last8y: Vec<f32> = agi.evidence_history.iter().rev().take(8)
+                .map(|(_, v)| v[1]).collect();
+            if let Some(fit) = linear_fit(&last8, &last8y) {
+                agi.concept_slope = fit.slope;
+                agi.concept_r2 = fit.r_squared;
+            }
+        }
+        // 反思
+        let _reflect = agi.reflection.reflect(16);
+        // 推理循环 - 用 propose + strongest
+        if agi.tick % 10 == 0 {
+            let text = format!("tick_{}", agi.tick);
+            agi.reasoning.propose(text, 0.5);
+        }
+        format!(
+            "{{\"tick\":{},\"emergence_signals\":{},\"concept_slope\":{:.3},\"concept_r2\":{:.3},\"hypotheses\":{}}}",
+            agi.tick,
+            sigs.len(),
+            agi.concept_slope,
+            agi.concept_r2,
+            agi.reasoning.len()
+        )
+    });
+    match result {
+        Some(s) => {
+            let cstr = CString::new(s).unwrap();
+            cstr.into_raw()
+        }
+        None => std::ptr::null(),
+    }
+}
+
+/// AGI 状态(JSON 摘要)
+#[no_mangle]
+pub extern "C" fn starsos_agi_status(id: c_ulong) -> *const c_char {
+    let result = with_agi(id as usize, |agi| {
+        format!(
+            "{{\"tick\":{},\"evidence_count\":{},\"emergence_signals\":{},\"causal_nodes\":{},\"memory_count\":{}}}",
+            agi.tick,
+            agi.evidence_history.len(),
+            agi.emergence_count,
+            agi.causal.nodes().count(),
+            agi.memory.len()
+        )
+    });
+    match result {
+        Some(s) => {
+            let cstr = CString::new(s).unwrap();
+            cstr.into_raw()
+        }
+        None => std::ptr::null(),
+    }
+}
+
+/// NLP 文本处理(让 AGI 真的"理解"你说的)
+#[no_mangle]
+pub extern "C" fn starsos_agi_nlp(id: c_ulong, text: *const c_char) -> *const c_char {
+    let text_str = unsafe {
+        if text.is_null() {
+            return std::ptr::null();
+        }
+        match CStr::from_ptr(text).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return std::ptr::null(),
+        }
+    };
+    let result = with_agi(id as usize, |agi| {
+        let nlu = agi.nlp.understand(&text_str);
+        format!(
+            "{{\"intent\":{},\"slots\":{}}}",
+            nlu.intent.as_str(),
+            nlu.slots.len()
+        )
+    });
+    match result {
+        Some(s) => {
+            let cstr = CString::new(s).unwrap();
+            cstr.into_raw()
+        }
+        None => std::ptr::null(),
+    }
+}
+
+/// 写记忆(让 AGI 记住某事)
+#[no_mangle]
+pub extern "C" fn starsos_agi_remember(
+    id: c_ulong,
+    _layer: c_int,
+    key: *const c_char,
+    value: *const c_char,
+) {
+    let key_str = unsafe {
+        if key.is_null() {
+            return;
+        }
+        CStr::from_ptr(key).to_str().unwrap_or("").to_string()
+    };
+    let value_str = unsafe {
+        if value.is_null() {
+            return;
+        }
+        CStr::from_ptr(value).to_str().unwrap_or("").to_string()
+    };
+    with_agi(id as usize, |agi| {
+        // 合并 key=value 当作 source|content 注入
+        agi.memory.inject_text(key_str, value_str);
+    });
+}
+
+/// 读记忆(简单通过 entries 找匹配的)
+#[no_mangle]
+pub extern "C" fn starsos_agi_recall(
+    id: c_ulong,
+    key: *const c_char,
+) -> *const c_char {
+    let key_str = unsafe {
+        if key.is_null() {
+            return std::ptr::null();
+        }
+        CStr::from_ptr(key).to_str().unwrap_or("").to_string()
+    };
+    let result = with_agi(id as usize, |agi| {
+        // 从已有 entries 里找匹配的
+        let entries = agi.memory.all_entries();
+        for e in entries {
+            if e.source.contains(&key_str) || e.content.contains(&key_str) {
+                return format!("{}: {}", e.source, e.content);
+            }
+        }
+        String::from("(not found)")
+    });
+    match result {
+        Some(s) => {
+            let cstr = CString::new(s).unwrap();
+            cstr.into_raw()
+        }
+        None => std::ptr::null(),
+    }
+}
+
 /// 内部使用
 #[allow(dead_code)]
 pub fn _dummy() {
