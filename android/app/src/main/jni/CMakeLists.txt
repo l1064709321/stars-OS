@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22.1)
 project("starsos")
 
 add_library(
-    starsjni
+    starsos
     SHARED
     bridge.c
 )
@@ -14,7 +14,7 @@ set_target_properties(quantum_core PROPERTIES
     IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libquantum_core.so"
 )
 
-target_link_libraries(starsjni
+target_link_libraries(starsos
     quantum_core
     log
 )
